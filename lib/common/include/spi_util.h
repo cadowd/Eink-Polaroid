@@ -49,8 +49,8 @@
 
 
 spi_device_handle_t NFC_ESP32_SPI;
-#define DMA_CHAN    2
-#define NFC_HOST    HSPI_HOST
+#define DMA_CHAN    SPI_DMA_CH2 //2
+#define NFC_HOST    SPI2_HOST //VSPI_HOST
 
 
  /*!

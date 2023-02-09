@@ -21,7 +21,7 @@
 #include <waveshare_42eink.h>
 #include "image_funcs.h"
 
-static const char *TAG = "example:sd_jpg";
+static const char *TAG = "nfc_camera";
 
 int screen_width = 400;
 int screen_height = 300;
@@ -34,8 +34,8 @@ static uint8_t gHexStrIdx;
 
 uint8_t* ImageBuffer;
 
-#define BUTTONPIN 14
-#define DEBOUNCETIMEOUT 50
+//#define BUTTONPIN 14
+//#define DEBOUNCETIMEOUT 50
 
 volatile int numberOfButtonInterrupts = 0;
 volatile bool lastState;
@@ -44,27 +44,47 @@ volatile uint32_t lastDebounceTime = 0;
 
 SemaphoreHandle_t buttonBinarySemaphore;
 
+TaskHandle_t flashLED_handle = NULL;
+TaskHandle_t flashLEDSlow_handle = NULL;
+
+#define PWDN_GPIO_NUM    -1
+#define RESET_GPIO_NUM   -1
+#define XCLK_GPIO_NUM    21
+#define SIOD_GPIO_NUM    26
+#define SIOC_GPIO_NUM    27
+
+#define Y9_GPIO_NUM      35
+#define Y8_GPIO_NUM      34
+#define Y7_GPIO_NUM      39
+#define Y6_GPIO_NUM      36
+#define Y5_GPIO_NUM      19
+#define Y4_GPIO_NUM      18
+#define Y3_GPIO_NUM       5
+#define Y2_GPIO_NUM       4
+#define VSYNC_GPIO_NUM   25
+#define HREF_GPIO_NUM    23
+#define PCLK_GPIO_NUM    22
+
 static camera_config_t camera_config = {
-    .pin_pwdn = CONFIG_PWDN,
-    .pin_reset = CONFIG_RESET,
-    .pin_xclk = CONFIG_XCLK,
-    .pin_sscb_sda = CONFIG_SDA,
-    .pin_sscb_scl = CONFIG_SCL,
+    .pin_pwdn = PWDN_GPIO_NUM,
+    .pin_reset = RESET_GPIO_NUM,
+    .pin_xclk = XCLK_GPIO_NUM,
+    .pin_sscb_sda = SIOD_GPIO_NUM,
+    .pin_sscb_scl = SIOC_GPIO_NUM,
 
-    .pin_d7 = CONFIG_D7,
-    .pin_d6 = CONFIG_D6,
-    .pin_d5 = CONFIG_D5,
-    .pin_d4 = CONFIG_D4,
-    .pin_d3 = CONFIG_D3,
-    .pin_d2 = CONFIG_D2,
-    .pin_d1 = CONFIG_D1,
-    .pin_d0 = CONFIG_D0,
-    .pin_vsync = CONFIG_VSYNC,
-    .pin_href = CONFIG_HREF,
-    .pin_pclk = CONFIG_PCLK,
+    .pin_d7 = Y9_GPIO_NUM,
+    .pin_d6 = Y8_GPIO_NUM,
+    .pin_d5 = Y7_GPIO_NUM,
+    .pin_d4 = Y6_GPIO_NUM,
+    .pin_d3 = Y5_GPIO_NUM,
+    .pin_d2 = Y4_GPIO_NUM,
+    .pin_d1 = Y3_GPIO_NUM,
+    .pin_d0 = Y2_GPIO_NUM,
+    .pin_vsync = VSYNC_GPIO_NUM,
+    .pin_href = HREF_GPIO_NUM,
+    .pin_pclk = PCLK_GPIO_NUM,
 
-    //XCLK 20MHz or 10MHz
-    .xclk_freq_hz = CONFIG_XCLK_FREQ,
+    .xclk_freq_hz = 20000000,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
@@ -72,7 +92,8 @@ static camera_config_t camera_config = {
     .frame_size = FRAMESIZE_VGA,   //QQVGA-UXGA Do not use sizes above QVGA when not JPEG
 
     .jpeg_quality = 12, //0-63 lower number means higher quality
-    .fb_count = 1       //if more than one, i2s runs in continuous mode. Use only with JPEG
+    .fb_count = 1,       //if more than one, i2s runs in continuous mode. Use only with JPEG
+    .grab_mode = CAMERA_GRAB_LATEST //Get latest image
 };
 
 static void *_malloc(size_t size)
@@ -135,6 +156,7 @@ static void IRAM_ATTR buttonISR(void* arg) {
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   //printf("button\n");
   /* un-block the interrupt processing task now */
+  gpio_intr_disable(BUTTON_PIN);
   xSemaphoreGiveFromISR( buttonBinarySemaphore, &xHigherPriorityTaskWoken );
 
     if(xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
@@ -172,7 +194,40 @@ static esp_err_t init_camera()
     return err;
   }
 
+  sensor_t* Sensor = esp_camera_sensor_get();
+  Sensor->set_contrast(Sensor, 1);       // -2 to 2
+  Sensor->set_special_effect(Sensor, 2); // 0 to 6 (0 - No Effect, 1 - Negative, 2 - Grayscale, 3 - Red Tint, 4 - Green Tint, 5 - Blue Tint, 6 - Sepia)
+  // Sensor->set_brightness(Sensor, 0);
+  // Sensor->set_exposure_ctrl(Sensor, 1);
+  // Sensor->set_aec2(Sensor, 0);
+  // Sensor->set_ae_level(Sensor, 0);
+  // Sensor->set_aec_value(Sensor, 300);
+  Sensor->set_vflip(Sensor, 1);
+  Sensor->set_hmirror(Sensor, 1);
+
   return ESP_OK;
+}
+
+static void flash_LED(void *arg)
+{
+  int flash_interval=60; //ms flash interval
+  while (true) {
+    gpio_set_level(LED_PIN, 0);
+    vTaskDelay(flash_interval / portTICK_PERIOD_MS);
+    gpio_set_level(LED_PIN, 1);
+    vTaskDelay(flash_interval / portTICK_PERIOD_MS);
+  }
+}
+
+static void flash_LED_slow(void *arg)
+{
+  int flash_interval_slow=500; //ms flash interval
+  while (true) {
+    gpio_set_level(LED_PIN, 0);
+    vTaskDelay(flash_interval_slow / portTICK_PERIOD_MS);
+    gpio_set_level(LED_PIN, 1);
+    vTaskDelay(flash_interval_slow / portTICK_PERIOD_MS);
+  }
 }
 
 void app_main()
@@ -191,6 +246,10 @@ void app_main()
   //Initialise button notification semaphore
   buttonBinarySemaphore=xSemaphoreCreateBinary();
   printf("Semaphore created \n");
+  if (buttonBinarySemaphore != NULL)
+  {
+  xSemaphoreTake(buttonBinarySemaphore, 10);
+  }
 
   /* Disable all interupts for peripheral config */
   platformProtectST25R391xComm();
@@ -215,7 +274,7 @@ void app_main()
   //Configure button interrupt pin
   gpio_pad_select_gpio(BUTTON_PIN);
   gpio_set_direction(BUTTON_PIN, GPIO_MODE_INPUT);
-  gpio_set_intr_type(BUTTON_PIN, GPIO_INTR_NEGEDGE);
+  gpio_set_intr_type(BUTTON_PIN, GPIO_INTR_POSEDGE);
   gpio_set_pull_mode(BUTTON_PIN, GPIO_FLOATING);
   gpio_intr_enable(BUTTON_PIN);
 
@@ -278,6 +337,28 @@ void app_main()
   //while(1)
   printf("Initialisation success  \n");
 
+  //LED flashing task
+  xTaskCreate(
+    flash_LED,         // Function that should be called
+    "Flash LED",      // Name of the task (for debugging)
+    1000,          // Stack size (bytes)
+    NULL,          // Parameter to pass
+    1,             // Task priority
+    &flashLED_handle  // Task handle
+  );
+  vTaskSuspend(flashLED_handle);
+    //LED flashing task
+  xTaskCreate(
+    flash_LED_slow,         // Function that should be called
+    "Flash LED slow",      // Name of the task (for debugging)
+    1000,          // Stack size (bytes)
+    NULL,          // Parameter to pass
+    1,             // Task priority
+    &flashLEDSlow_handle  // Task handle
+  );
+  
+
+
 
   /* Initialise RFAL */
   rfalWorker();
@@ -287,14 +368,13 @@ void app_main()
   //rfalWakeUpModeStart( NULL ); //Use wakeup mode to reduce power
   //printf("Wakeup mode  \n");
 
-
-  /* Infinite loop */
-  while(1)
-  {
   ReturnCode        errRFAL;
   bool              found = false;
   uint8_t           devIt = 0;
   rfalNfcaSensRes   sensRes;
+  /* Infinite loop */
+  while(1)
+  {
 
   rfalWorker();
 
@@ -312,13 +392,13 @@ void app_main()
       rfalNfcaListenDevice nfcaDevList[1];
       uint8_t                   devCnt;
       errRFAL = rfalNfcaPollerFullCollisionResolution( RFAL_COMPLIANCE_MODE_NFC, 1, nfcaDevList, &devCnt);
-      printf("%d\n", errRFAL);
+      // printf("%d\n", errRFAL);
 
       if ( (errRFAL == ERR_NONE) && (devCnt > 0) )
       {
         found = true;
         devIt = 0;
-        printf("Found \n");
+        // printf("Found \n");
 
 
         /* Check if it is Topaz aka T1T */
@@ -334,36 +414,49 @@ void app_main()
           /*********************************************/
           /* NFC-A device found                        */
           /* NFCID/UID is contained in: nfcaDev.nfcId1 */
-          printf("ISO14443A/NFC-A card found. UID: %s\r\n", hex2Str(nfcaDevList[0].nfcId1, nfcaDevList[0].nfcId1Len));
+          // printf("ISO14443A/NFC-A card found. UID: %s\r\n", hex2Str(nfcaDevList[0].nfcId1, nfcaDevList[0].nfcId1Len));
           //ID should be 5753445A31306D for Waveshare 42inch NFC
 
           /* task move to Block state to wait for interrupt event */
           //gpio_isr_handler_add(BUTTON_PIN, buttonISR, (void*) BUTTON_PIN);
-          printf("Ready and waiting on button \n");
-          gpio_set_level(LED_PIN, 0);
-          //Wait 200ms for button push, if no button push, poll again to check that frame is still there
-          if( xSemaphoreTake( buttonBinarySemaphore, 1000 / portTICK_PERIOD_MS ) == pdTRUE )
-          {
+          // printf("Ready and waiting on button \n");
+          vTaskSuspend(flashLEDSlow_handle);
           gpio_set_level(LED_PIN, 1);
-          ESP_LOGI(TAG, "Taking picture...");
-          camera_fb_t *pic = esp_camera_fb_get();
-          int64_t timestamp = esp_timer_get_time();
+          // Wait 200ms for button push, if no button push, poll again to check that frame is still there
+          if( xSemaphoreTake( buttonBinarySemaphore, 200 / portTICK_PERIOD_MS ) == pdTRUE )
+          {
+            printf("BUTTON\n");
+          // gpio_set_level(LED_PIN, 0); //TODO make LED flash
+          vTaskResume(flashLED_handle);
+          // ESP_LOGI(TAG, "Taking picture...");
+          camera_fb_t* pic = NULL;
+          pic = esp_camera_fb_get();
+          // camera_fb_t * fb = NULL;
+          // fb = esp_camera_fb_get();
+          esp_camera_fb_return(pic); // dispose the buffered image
+          pic = NULL; // reset to capture errors
+          pic = esp_camera_fb_get(); // get fresh image
+          // vTaskDelay(200 / portTICK_RATE_MS);
+          // int64_t timestamp = esp_timer_get_time();
 
           // use pic->buf to access the image
           ESP_LOGI(TAG, "Picture taken! Its size was: %zu bytes", pic->len);
 
-          printf("allocating memory\n");
+          // printf("allocating memory\n");
 
           //uint8_t * bin_buf = (uint8_t *)_malloc(bin_buf_size);
 
-          printf("converting to binary\n");
+          // printf("converting to binary\n");
           fmt2binary(pic->buf, pic->len, 400, 300, pic->format, ImageBuffer);
-          printf("Done\n");
+          // printf("Done\n");
 
           vTaskDelay(200 / portTICK_RATE_MS);
           rfalWorker();
           epaper_init(ImageBuffer);
-          vTaskDelay(200 / portTICK_RATE_MS);
+          vTaskDelay(1000 / portTICK_RATE_MS);
+          esp_camera_fb_return(pic); //release reserved memory
+          vTaskSuspend(flashLED_handle);
+          gpio_intr_enable(BUTTON_PIN);
           }
           rfalWorker();
           //rfalWakeUpModeStart( NULL );
@@ -372,10 +465,11 @@ void app_main()
       }
     }
     else{
-    gpio_set_level(LED_PIN, 1);
+    // gpio_set_level(LED_PIN, 0);
+    vTaskResume(flashLEDSlow_handle);
     rfalWorker();
     rfalFieldOff();
-    vTaskDelay(300 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
   rfalWorker();
   rfalFieldOff();
@@ -384,25 +478,3 @@ void app_main()
   }
 
 }
-
-// void app_main()
-// {
-//     esp_err_t err = init_camera();
-//     if (err != ESP_OK)
-//     {
-//         ESP_LOGE(TAG, "Camera Init Failed");
-//         vTaskDelay(1000);
-//     }
-//     //uint8_t * iArr;
-//     uint8_t * iArr_BW  = NULL;
-//
-//     while (1)
-//     {
-//         ESP_LOGI(TAG, "Taking picture...");
-//         camera_fb_t *pic = esp_camera_fb_get();
-//
-//
-//
-//         vTaskDelay(5000 / portTICK_RATE_MS);
-//     }
-// }

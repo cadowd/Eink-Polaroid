@@ -242,7 +242,7 @@
         }
         pic_send_array[(iy * 50) + ix] = image_byte;
       }
-      printf("\n");
+      // printf("\n");
     }
 
    //NFCTag ready to send data
@@ -277,7 +277,7 @@
       int i2 = i * 100;
       memcpy( &bArr_packet[3], &pic_send_array[i2], 100*sizeof(uint8_t));
 
-      printf("%% %d\n", i);
+      // printf("%% %d\n", i);
       //printf("%d\n", sizeof(bArr_packet) / sizeof(bArr_packet[0]));
       rxBuf[0]=1; rxBuf[1]=1; //set response to false
       err=rfalTransceiveBlockingTxRx( bArr_packet, 103, rxBuf, rxBufLen, actLen, flags, fwt );

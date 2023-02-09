@@ -93,24 +93,24 @@ extern "C" {
 * GLOBAL DEFINES
 ******************************************************************************
 */
-#define ST25R391X_SS_PIN            15          /*!< GPIO pin used for ST25R3911 SPI SS                */
+#define ST25R391X_SS_PIN            GPIO_NUM_15          /*!< GPIO pin used for ST25R3911 SPI SS                */
 //#define ST25R391X_SS_PORT           GPIOE               /*!< GPIO port used for ST25R3911 SPI SS port          */
 
 #define ST25R391X_INT_PIN           GPIO_NUM_2           /*!< GPIO pin used for ST25R3911 External Interrupt    */
 //#define ST25R391X_INT_PORT          GPIOB               /*!< GPIO port used for ST25R3911 External Interrupt   */
 
-#define BUTTON_PIN           GPIO_NUM_3           /*!< GPIO pin used for button input    */
-#define LED_PIN           GPIO_NUM_4           /*!< GPIO pin used for LED output    */
+#define BUTTON_PIN           GPIO_NUM_33           /*!< GPIO pin used for button input    */
+#define LED_PIN           GPIO_NUM_32           /*!< GPIO pin used for LED output    */
 
 
 #define GPIO_INPUT_PIN_SEL  ((1ULL<<ST25R391X_INT_PIN))
 #define GPIO_BUTTON_PIN_SEL  ((1ULL<<BUTTON_PIN))
 
 
-#define PIN_NUM_MISO 12
-#define PIN_NUM_MOSI 13
-#define PIN_NUM_CLK  14
-#define PIN_NUM_CS   15
+#define PIN_NUM_MISO GPIO_NUM_12
+#define PIN_NUM_MOSI GPIO_NUM_13
+#define PIN_NUM_CLK  GPIO_NUM_14
+#define PIN_NUM_CS   GPIO_NUM_15
 
 #define CAMERA_IMAGE_WIDTH      640
 #define CAMERA_IMAGE_HEIGHT     480
